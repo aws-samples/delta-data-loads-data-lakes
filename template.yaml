@@ -1,0 +1,720 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this
+# software and associated documentation files (the "Software"), to deal in the Software
+# without restriction, including without limitation the rights to use, copy, modify,
+# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: "Resources for ongoing change data capture using AWS DMS"
+Parameters:
+  pS3EndpointIdentifier:
+    Type: String
+    Description: ARN for the DMS S3 Endpoints
+    Default: etlpS3Endpoint
+  pEngineVersion:
+    Type: String
+    Default: '3.4.3'
+  pReplicationSubnetGroupIdentifier:
+    Type: String
+    Default: etlReplicationsubnetgroupidentifier
+  pDatabaseEndpointIdentifier:
+    Type: String
+    Description: This parameter is the default identifier of the DMS endpoint that connects to the Database to read or fetch data.
+    Default: etl-db-endpoint-cf
+  pDatabasePort:
+    Type: Number
+    Description: Database Port Number
+    Default: "1521"
+  pDynamoDBConfigurationTableName:
+    Type: String
+    Default: etlConfiguration
+  pNotificationsEmail:
+    Description: Email address to send notifications
+    MinLength: 4
+    Type: String
+  pReplicationInstanceClass:
+    Type: String
+    Default: dms.r4.8xlarge
+  pSourceDatabaseName:
+    Type: String
+    Description: This paramter is the Database Name.
+  pSourceDatabaseServerName:
+    Type: String
+    Description: This paramter is the Database Endpoint Name of the Reader Endpoint for the DMS Endpoint to connect to read or fetch data.
+  pSourceDatabaseUsername:
+    Type: String
+    Description: Source Database Username
+    Default: admin
+  pSourceDatabasePassword:
+    Type: String
+    NoEcho: true
+    Description: Source Database Password
+  pReplicationIntanceSecurityGroup:
+    Type: String
+  pSubnet1:
+    Type: String
+  pSubnet2:
+    Type: String
+  pReplicationInstanceIdentifier:
+    Type: String
+    Default: etlReplicationInstance
+Resources:
+  etlDMSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["dms.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: etlDMSPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:ReplicateObject'
+                  - 's3:DeleteObject'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${etltargetS3Bucket}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${etltargetS3Bucket}/*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+
+  etlCreateReplicationTaskForTableRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:Query'
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:*:*:table/${pDynamoDBConfigurationTableName}'
+              - Effect: Allow
+                Action:
+                  - 'dms:CreateReplicationTask'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dms:*:${AWS::AccountId}:endpoint:*'
+                  - !Sub 'arn:${AWS::Partition}:dms:${AWS::Region}:${AWS::AccountId}:rep:*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+
+  etlLambdaStartReplicationTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'dms:StartReplicationTask'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dms:${AWS::Region}:${AWS::AccountId}:task:*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+
+  etlLambdaStartCDCWorkflowRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'states:StartExecution'
+                Resource: !Ref etlStepFunctionDataPipeline
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:Scan'
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:*:*:table/${pDynamoDBConfigurationTableName}'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+  etlLambdaCheckDMSReplicationTaskStatusRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'dms:DescribeReplicationTasks'
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+
+  etlLambdaCopyS3CopyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:*:*:table/${pDynamoDBConfigurationTableName}'
+              - Effect: Allow
+                Action:
+                  - 's3:ListBucket'
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${etltargetS3Bucket}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${etltargetS3Bucket}/*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+
+  etlLambdaDeleteDMSReplicationTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'dms:DeleteReplicationTask'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dms:${AWS::Region}:${AWS::AccountId}:task:*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+  etlLambdaUpdateLoadStartValueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'dms:DeleteReplicationTask'
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:dms:us-east-1:${AWS::AccountId}:task:*'
+              - Effect: Allow
+                Action:
+                  - 'dynamodb:GetItem'
+                  - 'dynamodb:UpdateItem'
+                  - 'dynamodb:PutItem'
+                  - 'dynamodb:UpdateTable'
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:*:*:table/${pDynamoDBConfigurationTableName}'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetResourcePolicy
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:ListSecretVersionIds
+                Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:us-east-1:${AWS::AccountId}:secret:/dmsdeltaload*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:ListSecrets
+                Resource: '*'
+
+
+  etlstepFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["states.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: etlDMSPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                  - sns:Publish
+                  - lambda:InvokeFunction
+                Resource: '*'
+        - PolicyName: etlEC2InlinePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+  etltargetS3Bucket:
+    Type: AWS::S3::Bucket
+
+  etlSNSDataPipeline:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Data_Pipeline
+      Subscription:
+        - Endpoint: !Ref pNotificationsEmail
+          Protocol: email
+
+  etlReplicationSubnetGroup:
+    Type: 'AWS::DMS::ReplicationSubnetGroup'
+    Properties:
+      ReplicationSubnetGroupDescription: 'Replication subnet group'
+      ReplicationSubnetGroupIdentifier: !Ref pReplicationSubnetGroupIdentifier
+      SubnetIds:
+        - !Ref pSubnet1
+        - !Ref pSubnet2
+
+  etlDatabaseEndpoint:
+    Type: 'AWS::DMS::Endpoint'
+    Properties:
+      DatabaseName: !Ref pSourceDatabaseName
+      EndpointIdentifier: !Ref pDatabaseEndpointIdentifier
+      EndpointType: source
+      EngineName: oracle
+      Password: !Ref pSourceDatabasePassword
+      Port: !Ref pDatabasePort
+      SslMode: none
+      ServerName: !Ref pSourceDatabaseServerName
+      Username: !Ref pSourceDatabaseUsername
+
+  etlS3Endpoint:
+    Type: 'AWS::DMS::Endpoint'
+    Properties:
+      EndpointIdentifier: !Ref pS3EndpointIdentifier
+      EndpointType: target
+      EngineName: s3
+      ExtraConnectionAttributes: addColumnName=true; DataFormat=parquet
+      S3Settings:
+        BucketName: !Ref etltargetS3Bucket
+        BucketFolder: 'etl/raw'
+        CompressionType: NONE
+        ServiceAccessRoleArn: !GetAtt etlDMSRole.Arn
+
+  LanbdaUpdateStartValueLayer:
+    Type: AWS::Lambda::LayerVersion
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Properties:
+      CompatibleRuntimes:
+        - python3.7
+      Content:
+        S3Bucket: aws-bigdata-blog
+        S3Key: artifacts/dmsdeltaloadsblog/cx_Oracle_layer.zip
+      Description: cx_oracle
+      LayerName: cx_oracle-layer
+
+  etlDMSReplicationInstance:
+    Type: 'AWS::DMS::ReplicationInstance'
+    Properties:
+      AllocatedStorage: 100
+      AutoMinorVersionUpgrade: true
+      MultiAZ: false
+      PubliclyAccessible: false
+      ReplicationInstanceClass: !Ref pReplicationInstanceClass
+      ReplicationInstanceIdentifier: !Ref pReplicationInstanceIdentifier
+      ReplicationSubnetGroupIdentifier: !Ref etlReplicationSubnetGroup
+      EngineVersion: !Ref pEngineVersion
+      VpcSecurityGroupIds:
+        - !Ref pReplicationIntanceSecurityGroup
+
+  DBSecret:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name: /dmsdeltaload/dbsecret
+      Description: Generates random value for db password and stores in secrets manager
+      SecretString: !Sub '{"password":"${pSourceDatabasePassword}"}'
+
+  etlLambdaUpdateLoadStartValue:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/etlLambdaUpdateLoadStartValue
+      Description: 'This functions is used to copy files produced by DMS to the processed S3 folder for a given table.'
+      Environment:
+        Variables:
+          DYNAMODBTABLE:
+            Ref: pDynamoDBConfigurationTableName
+          SrcServerName:
+            Ref: pSourceDatabaseServerName
+          SrcDbName:
+            Ref: pSourceDatabaseName
+          SrcDbPortNumber:
+            Ref: pDatabasePort
+          SrcDbUserName:
+            Ref: pSourceDatabaseUsername
+          SrcDbSecret: "/dmsdeltaload/dbsecret"
+      MemorySize: 512
+      Role: !GetAtt etlLambdaUpdateLoadStartValueRole.Arn
+      Runtime: python3.7
+      Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+      Layers:
+        - !Ref LanbdaUpdateStartValueLayer
+      Timeout: 300
+
+  etlLambdaStartCDCWorkflow:
+      Type: AWS::Serverless::Function
+      Properties:
+        CodeUri: src/etlLambdaStartCDCWorkflow
+        Description: 'This functions is used to copy files produced by DMS to the processed S3 folder for a given table.'
+        Environment:
+          Variables:
+            S3_BUCKET:
+              Ref: etltargetS3Bucket
+            DYNAMODBTABLE:
+              Ref: pDynamoDBConfigurationTableName
+            STATEMACHINEARN:
+              Ref: etlStepFunctionDataPipeline
+        MemorySize: 512
+        Role: !GetAtt etlLambdaStartCDCWorkflowRole.Arn
+        Runtime: python3.7
+        Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+        Timeout: 300
+
+  etlCreateReplicationTaskForTable:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/etlCreateReplicationTaskForTable
+      Description: "This functions creates replication task for a table."
+      Environment:
+       Variables:
+         DYNAMODBTABLE:
+          !Ref pDynamoDBConfigurationTableName
+         SOURCE_ENDPOINT_ARN:
+          !Ref etlDatabaseEndpoint
+         TARGET_ENDPOINT_ARN:
+          !Ref etlS3Endpoint
+         REPLICATION_INSTANCE_ARN:
+          !Ref etlDMSReplicationInstance
+      MemorySize: 1028
+      Role: !GetAtt etlCreateReplicationTaskForTableRole.Arn
+      Runtime: python3.7
+      Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+      Timeout: 900
+
+  etlLambdaStartReplicationTaskforCDC:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/etlLambdaStartReplicationTaskforCDC
+      Description: 'This functions starts the DMS task to replica oracle DB to S3.'
+      MemorySize: 512
+      Role: !GetAtt etlLambdaStartReplicationTaskRole.Arn
+      Runtime: python3.7
+      Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+      Timeout: 300
+
+  etlLambdaDeleteDMSReplicationTask:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/etlLambdaDeleteDMSReplicationTask
+      Description: 'This functions checks the DMS task that is replicating from source database to S3.'
+      MemorySize: 512
+      Role: !GetAtt etlLambdaDeleteDMSReplicationTaskRole.Arn
+      Runtime: python3.7
+      Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+      Timeout: 300
+
+  etlLambdaCheckDMSReplicationTaskStatus:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/etlLambdaCheckDMSReplicationTaskStatus
+      Description: 'This functions checks the DMS task that is replicating oracle DB to S3.'
+      MemorySize: 512
+      Role: !GetAtt etlLambdaCheckDMSReplicationTaskStatusRole.Arn
+      Runtime: python3.7
+      Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+      Timeout: 300
+
+  etlLambdaCopyS3Copy:
+      Type: AWS::Serverless::Function
+      Properties:
+        CodeUri: src/etlLambdaCopyS3Copy
+        Description: 'This functions copied files produced by DMS to the processed S3 folder for a given table.'
+        Environment:
+          Variables:
+            S3_BUCKET:
+              Ref: etltargetS3Bucket
+            DYNAMODBTABLE:
+              Ref: pDynamoDBConfigurationTableName
+        MemorySize: 512
+        Role: !GetAtt etlLambdaCopyS3CopyRole.Arn
+        Runtime: python3.7
+        Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+        Timeout: 300
+
+  etlStepFunctionDataPipeline:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: src/etlStepFunctionDataPipeline/etlStepFunctionDataPipeline.asl.json
+      DefinitionSubstitutions:
+        rCreateReplicationTaskForTableArn: !GetAtt [ etlCreateReplicationTaskForTable,Arn ]
+        rLambdaStartDMSforCDCArn: !GetAtt [ etlLambdaStartReplicationTaskforCDC,Arn ]
+        rLambdaCheckCDCDMSArn: !GetAtt [ etlLambdaCheckDMSReplicationTaskStatus,Arn ]
+        rLambdaCopyCDCtoProcessedArn: !GetAtt [ etlLambdaCopyS3Copy,Arn ]
+        rLambdaDeleteDMSArn: !GetAtt [etlLambdaDeleteDMSReplicationTask,Arn ]
+        rSNSDataPipelineCDCArn: !Ref etlSNSDataPipeline
+        retlLambdaUpdateLoadStartValueArn: !GetAtt [ etlLambdaUpdateLoadStartValue,Arn ]
+      Role: !GetAtt etlstepFunctionRole.Arn
+

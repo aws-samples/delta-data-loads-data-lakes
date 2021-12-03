@@ -1,11 +1,4 @@
-## My Project
-
-TODO: Fill this README out!
-
-Be sure to:
-
-* Change the title in this README
-* Edit your repository description on GitHub
+## Perform Delta Data Loads to Data Lakes using AWS DMS
 
 ## Security
 
