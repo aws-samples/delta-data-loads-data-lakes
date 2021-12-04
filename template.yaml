@@ -24,7 +24,7 @@ Parameters:
     Default: etlpS3Endpoint
   pEngineVersion:
     Type: String
-    Default: '3.4.3'
+    Default: '3.4.6'
   pReplicationSubnetGroupIdentifier:
     Type: String
     Default: etlReplicationsubnetgroupidentifier
