@@ -93,7 +93,7 @@ def lambda_handler(event, context):
             if return_code != '200':
                 {'result':'FAILED'}
 
-        return {"result":"SUCCESS","taskArn":dmstaskarn,"DYNAMODB_KEY":DynamoDBKey}
+        return {"result":"SUCCESS","taskArn":dmstaskarn,"DYNAMODB_KEY":DynamoDBKey,'replicationInstanceArn':event['replicationInstanceArn']}
     except Exception as e:
             print("Exception thrown: %s" % str(e))
             return {'result':'FAILED'}

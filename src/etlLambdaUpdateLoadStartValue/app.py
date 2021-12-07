@@ -110,7 +110,7 @@ def lambda_handler(event, context):
             end_value=str(result).strip()
             value= start_value + "," + end_value
             update_attribute_value_dyndb('targetTableName',DDKey,'startvalue',value,DynTable)
-        return {'result':'SUCCEEDED','DYNAMODB_KEY':DDKey}
+        return {'result':'SUCCEEDED','DYNAMODB_KEY':DDKey,'replicationInstanceArn':event['replicationInstanceArn']}
     except Exception as e:
         print("Exception thrown: %s" % str(e))
         return {'result':'FAILED'}

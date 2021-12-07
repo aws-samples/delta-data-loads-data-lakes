@@ -64,7 +64,7 @@ def lambda_handler(event, context):
       status=check_task_status(dmstaskarn)
       print("Response from check_dms_status{}".format(status))
       DynamoDBKey=event["DYNAMODB_KEY"]
-      return {"result":status,"taskArn":dmstaskarn,"DYNAMODB_KEY":DynamoDBKey}
+      return {"result":status,"taskArn":dmstaskarn,"DYNAMODB_KEY":DynamoDBKey,'replicationInstanceArn':event['replicationInstanceArn']}
 
   except botocore.exceptions.ClientError as e:
       print("Could not start dms task: %s" % e)

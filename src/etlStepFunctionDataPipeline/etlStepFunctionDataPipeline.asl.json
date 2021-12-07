@@ -1,10 +1,29 @@
 {
     "Comment": "Data Pipeline to perform change data capture (CDC)",
-    "StartAt": "MapTabletoStep",
+    "StartAt": "Create Replication Instance",
     "States": {
+      "Create Replication Instance": {
+        "Type": "Task",
+        "Resource": "${retlLambdaCreateReplicationInstanceArn}",
+        "Next": "Wait for Testing Replication Instance Connection"
+      },    "Wait for Testing Replication Instance Connection": {
+        "Type": "Wait",
+        "Seconds": 60,
+        "Next": "Test Replication Instance Connection"
+      },
+      "Test Replication Instance Connection": {
+        "Type": "Task",
+        "Resource": "${retlLambdaTestReplicationInstanceConnectionArn}",
+        "Next": "MapTabletoStep"
+      },
       "MapTabletoStep": {
         "Type": "Map",
         "MaxConcurrency": 2,
+        "ItemsPath": "$.TableNames",
+        "Parameters": {
+          "DYNAMODB_KEY.$": "$$.Map.Item.Value",
+          "replicationInstanceArn.$": "$.replicationInstanceArn"
+        },
         "Iterator": {
            "StartAt": "Update start value for table",
            "States": {
@@ -116,6 +135,7 @@
     "Record Success": {
       "Type": "Task",
       "Resource": "arn:aws:states:::sns:publish",
+      "ResultPath": null,
        "Parameters": {
          "Message": {
        "Input": "Data Pipeline Succssful!"
@@ -134,8 +154,7 @@
      "Record Failure": {
        "Type": "Task",
        "Resource": "arn:aws:states:::sns:publish",
-
-
+       "ResultPath": null,
        "Parameters": {
          "Message": "Data Pipeline Failed",
 
@@ -146,9 +165,13 @@
            }
 
     },
-         "Next": "Send Completion Message"
+         "Next": "Delete Replication Instance"
     },
-
+      "Delete Replication Instance": {
+        "Type": "Task",
+        "Resource": "${retlLambdaDeleteReplicationInstanceArn}",
+        "Next": "Send Completion Message"
+      },
       "Send Completion Message": {
       "Type": "Task",
       "Resource": "arn:aws:states:::sns:publish",

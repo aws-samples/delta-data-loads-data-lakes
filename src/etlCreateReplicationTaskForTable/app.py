@@ -31,9 +31,10 @@ tablemappingbetween='{"rules": [{"rule-type": "selection","rule-id": "1","rule-n
 tmsimple='{"rules": [{"rule-type": "selection","rule-id": "1","rule-name": "1","object-locator": {"schema-name": "SchemaName","table-name": "TableName"},"rule-action": "include"}]}'
 def create_replication_task_for_table(tablename,DynamoDBKey,tablemapping,SourceEndpointArn,TargetEndpointArn,ReplicationInstanceArn,ReplicationTaskIdentifier):
     c=boto3.client('dms')
+    ReplicationTaskIdentifierName = ReplicationTaskIdentifier + "-"+DynamoDBKey
     replication_task_settings = '{"Logging": {"EnableLogging": true,"LogComponents": [{"Id": "SOURCE_UNLOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "SOURCE_CAPTURE","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_LOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_APPLY","Severity": "LOGGER_SEVERITY_INFO"},{"Id": "TASK_MANAGER","Severity": "LOGGER_SEVERITY_DEBUG"}]},}'
     response=c.create_replication_task(
-    ReplicationTaskIdentifier=ReplicationTaskIdentifier,
+    ReplicationTaskIdentifier=ReplicationTaskIdentifierName,
     SourceEndpointArn=SourceEndpointArn,
     TargetEndpointArn=TargetEndpointArn,
     ReplicationInstanceArn=ReplicationInstanceArn,
@@ -41,11 +42,27 @@ def create_replication_task_for_table(tablename,DynamoDBKey,tablemapping,SourceE
     ReplicationTaskSettings=replication_task_settings,
     TableMappings=tablemapping,)
     return response
+
+def check_task_status(dmstaskarn):
+    client = boto3.client('dms')
+    response = client.describe_replication_tasks(
+        Filters=[
+            {
+                'Name': 'replication-task-arn',
+                'Values': [
+                    dmstaskarn
+                ]
+            }
+        ], WithoutSettings=True
+
+    )
+    return response
+
 def lambda_handler(event, context):
     try:
         SArn=os.getenv('SOURCE_ENDPOINT_ARN')
         TArn=os.getenv('TARGET_ENDPOINT_ARN')
-        InstanceArn=os.getenv('REPLICATION_INSTANCE_ARN')
+        InstanceArn=event['replicationInstanceArn']
         table=os.getenv('DYNAMODBTABLE').strip()
         DDKey=event['DYNAMODB_KEY']
         table_config=read_table_configuration(table,DDKey)
@@ -79,7 +96,17 @@ def lambda_handler(event, context):
                 t=t.replace('SchemaName',schemaname).replace('TableName',tablename)
             print(t)
             response=create_replication_task_for_table(table,DDKey,t,SArn,TArn,InstanceArn,TaskId)
-        return {'result':'SUCCEEDED','taskArn':response['ReplicationTask']['ReplicationTaskArn'],"DYNAMODB_KEY":DDKey}
+            taskArn = response['ReplicationTask']['ReplicationTaskArn']
+            print('taskArn',taskArn)
+            status=check_task_status(taskArn)['ReplicationTasks'][0]['Status']
+            while (status.lower() in ['creating','moving','deleting', 'failed','failed-move','modifying','ready']):
+                print('Task Status:',status)
+                if (status.lower() in ['deleting', 'failed','failed-move']):
+                    return {'result':'FAILED'}
+                elif (status.lower() in ['ready']):
+                    return {'result':'SUCCEEDED','taskArn':response['ReplicationTask']['ReplicationTaskArn'],"DYNAMODB_KEY":DDKey,'replicationInstanceArn':event['replicationInstanceArn']}
+                status=check_task_status(taskArn)['ReplicationTasks'][0]['Status']
+
     except Exception as e:
         print("Exception thrown: %s" % str(e))
         return {'result':'FAILED'}

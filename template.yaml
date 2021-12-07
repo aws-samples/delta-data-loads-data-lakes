@@ -27,7 +27,7 @@ Parameters:
     Default: '3.4.6'
   pReplicationSubnetGroupIdentifier:
     Type: String
-    Default: etlReplicationsubnetgroupidentifier
+    Default: etlreplicationsubnetgroupidentifier
   pDatabaseEndpointIdentifier:
     Type: String
     Description: This parameter is the default identifier of the DMS endpoint that connects to the Database to read or fetch data.
@@ -142,6 +142,10 @@ Resources:
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:dms:*:${AWS::AccountId}:endpoint:*'
                   - !Sub 'arn:${AWS::Partition}:dms:${AWS::Region}:${AWS::AccountId}:rep:*'
+              - Effect: Allow
+                Action:
+                  - 'dms:DescribeReplicationTasks'
+                Resource: "*"
               - Effect: Allow
                 Action:
                   - ec2:DescribeVpcs
@@ -327,6 +331,54 @@ Resources:
                   - ec2:DeleteNetworkInterface
                 Resource: '*'
 
+  etlLambdaDeleteDMSReplicationInstanceManagementRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Principal:
+              Service: ["lambda.amazonaws.com"]
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 'dms:AddTagsToResource'
+                  - 'dms:CreateReplicationInstance'
+                  - 'dms:DeleteReplicationInstance'
+                  - 'dms:DescribeOrderableReplicationInstances'
+                  - 'dms:DescribeReplicationInstanceTaskLogs'
+                  - 'dms:DescribeReplicationInstances'
+                  - 'dms:ModifyReplicationInstance'
+                  - 'dms:ModifyReplicationSubnetGroup'
+                  - 'dms:RebootReplicationInstance'
+                  - 'dms:TestConnection'
+                  - 'dms:DescribeConnections'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:ModifyNetworkInterfaceAttribute
+                  - ec2:CreateNetworkInterface
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
 
   etlLambdaDeleteDMSReplicationTaskRole:
     Type: AWS::IAM::Role
@@ -525,20 +577,6 @@ Resources:
       Description: cx_oracle
       LayerName: cx_oracle-layer
 
-  etlDMSReplicationInstance:
-    Type: 'AWS::DMS::ReplicationInstance'
-    Properties:
-      AllocatedStorage: 100
-      AutoMinorVersionUpgrade: true
-      MultiAZ: false
-      PubliclyAccessible: false
-      ReplicationInstanceClass: !Ref pReplicationInstanceClass
-      ReplicationInstanceIdentifier: !Ref pReplicationInstanceIdentifier
-      ReplicationSubnetGroupIdentifier: !Ref etlReplicationSubnetGroup
-      EngineVersion: !Ref pEngineVersion
-      VpcSecurityGroupIds:
-        - !Ref pReplicationIntanceSecurityGroup
-
   DBSecret:
     Type: 'AWS::SecretsManager::Secret'
     Properties:
@@ -546,11 +584,78 @@ Resources:
       Description: Generates random value for db password and stores in secrets manager
       SecretString: !Sub '{"password":"${pSourceDatabasePassword}"}'
 
+  etlLambdaCreateReplicationInstance:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/etlLambdaCreateReplicationInstance
+      Description: 'This functions creates the replication instance.'
+      MemorySize: 512
+      Role: !GetAtt etlLambdaDeleteDMSReplicationInstanceManagementRole.Arn
+      Runtime: python3.7
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          ReplicationInstanceIdentifier:
+            Ref: pReplicationInstanceIdentifier
+          ReplicationSubnetGroupIdentifier:
+            Ref: pReplicationSubnetGroupIdentifier
+          EngineVersion:
+            Ref: pEngineVersion
+          VpcSecurityGroupIds:
+            Ref: pReplicationIntanceSecurityGroup
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+      Timeout: 900
+
+  etlLambdaDeleteReplicationInstance:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/etlLambdaDeleteReplicationInstance
+      Description: 'This functions deletes the replication instance.'
+      MemorySize: 512
+      Role: !GetAtt etlLambdaDeleteDMSReplicationInstanceManagementRole.Arn
+      Runtime: python3.7
+      Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+      Timeout: 900
+
+  etlLambdaTestReplicationInstanceConnection:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/etlLambdaTestReplicationInstanceConnection
+      Description: 'This functions deletes the replication instance.'
+      Environment:
+        Variables:
+          etlDatabaseEndpointArn:
+            Ref: !GetAtt [etlDatabaseEndpoint,Arn]
+          etlS3EndpointArn:
+            Ref: !GetAtt [etlS3Endpoint,Arn]
+      MemorySize: 512
+      Role: !GetAtt etlLambdaDeleteDMSReplicationInstanceManagementRole.Arn
+      Runtime: python3.7
+      Handler: app.lambda_handler
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref pReplicationIntanceSecurityGroup
+        SubnetIds:
+          - !Ref pSubnet1
+          - !Ref pSubnet1
+      Timeout: 900
+
   etlLambdaUpdateLoadStartValue:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/etlLambdaUpdateLoadStartValue
-      Description: 'This functions is used to copy files produced by DMS to the processed S3 folder for a given table.'
+      Description: 'This functions is used to update the start values for a given source table.'
       Environment:
         Variables:
           DYNAMODBTABLE:
@@ -576,31 +681,31 @@ Resources:
           - !Ref pSubnet1
       Layers:
         - !Ref LanbdaUpdateStartValueLayer
-      Timeout: 300
+      Timeout: 900
 
   etlLambdaStartCDCWorkflow:
       Type: AWS::Serverless::Function
       Properties:
         CodeUri: src/etlLambdaStartCDCWorkflow
-        Description: 'This functions is used to copy files produced by DMS to the processed S3 folder for a given table.'
+        Description: 'This functions is used to start the CDC workflow'
         Environment:
           Variables:
-            S3_BUCKET:
-              Ref: etltargetS3Bucket
             DYNAMODBTABLE:
               Ref: pDynamoDBConfigurationTableName
             STATEMACHINEARN:
               Ref: etlStepFunctionDataPipeline
+            ReplicationInstanceClass:
+              Ref: pReplicationInstanceClass
         MemorySize: 512
         Role: !GetAtt etlLambdaStartCDCWorkflowRole.Arn
         Runtime: python3.7
         Handler: app.lambda_handler
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref pReplicationIntanceSecurityGroup
-        SubnetIds:
-          - !Ref pSubnet1
-          - !Ref pSubnet1
+        VpcConfig:
+          SecurityGroupIds:
+            - !Ref pReplicationIntanceSecurityGroup
+          SubnetIds:
+            - !Ref pSubnet1
+            - !Ref pSubnet1
         Timeout: 300
 
   etlCreateReplicationTaskForTable:
@@ -616,8 +721,6 @@ Resources:
           !Ref etlDatabaseEndpoint
          TARGET_ENDPOINT_ARN:
           !Ref etlS3Endpoint
-         REPLICATION_INSTANCE_ARN:
-          !Ref etlDMSReplicationInstance
       MemorySize: 1028
       Role: !GetAtt etlCreateReplicationTaskForTableRole.Arn
       Runtime: python3.7
@@ -651,7 +754,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/etlLambdaDeleteDMSReplicationTask
-      Description: 'This functions checks the DMS task that is replicating from source database to S3.'
+      Description: 'This functions deletes the DMS task that is replicating from source database to S3.'
       MemorySize: 512
       Role: !GetAtt etlLambdaDeleteDMSReplicationTaskRole.Arn
       Runtime: python3.7
@@ -662,7 +765,7 @@ Resources:
         SubnetIds:
           - !Ref pSubnet1
           - !Ref pSubnet1
-      Timeout: 300
+      Timeout: 900
 
   etlLambdaCheckDMSReplicationTaskStatus:
     Type: AWS::Serverless::Function
@@ -696,12 +799,12 @@ Resources:
         Role: !GetAtt etlLambdaCopyS3CopyRole.Arn
         Runtime: python3.7
         Handler: app.lambda_handler
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref pReplicationIntanceSecurityGroup
-        SubnetIds:
-          - !Ref pSubnet1
-          - !Ref pSubnet1
+        VpcConfig:
+          SecurityGroupIds:
+            - !Ref pReplicationIntanceSecurityGroup
+          SubnetIds:
+            - !Ref pSubnet1
+            - !Ref pSubnet1
         Timeout: 300
 
   etlStepFunctionDataPipeline:
@@ -716,5 +819,8 @@ Resources:
         rLambdaDeleteDMSArn: !GetAtt [etlLambdaDeleteDMSReplicationTask,Arn ]
         rSNSDataPipelineCDCArn: !Ref etlSNSDataPipeline
         retlLambdaUpdateLoadStartValueArn: !GetAtt [ etlLambdaUpdateLoadStartValue,Arn ]
+        retlLambdaCreateReplicationInstanceArn: !GetAtt [etlLambdaCreateReplicationInstance,Arn]
+        retlLambdaDeleteReplicationInstanceArn: !GetAtt [etlLambdaDeleteReplicationInstance,Arn]
+        retlLambdaTestReplicationInstanceConnectionArn: !GetAtt [etlLambdaTestReplicationInstanceConnection,Arn]
       Role: !GetAtt etlstepFunctionRole.Arn
 

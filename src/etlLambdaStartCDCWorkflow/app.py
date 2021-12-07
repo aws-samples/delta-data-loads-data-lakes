@@ -32,23 +32,23 @@ def get_crawlers(dynamodbtablename):
     response = dynamodb.scan(TableName=dynamodbtablename)
     items=response['Items']
     return items
-def create_json(tablename):
+def fingTableNames(tablename):
     response=get_crawlers(tablename)
-    json_array=[]
+    inputTableNames=[]
     for item in response:
         active_flag=item['activeflag']['S']
         if active_flag=='Y':
             targetTableName=item['targetTableName']['S']
-            item={'DYNAMODB_KEY':targetTableName}
-            #print(item)
-            json_array.append(item)
-    return (json_array)
+            inputTableNames.append(targetTableName)
+    return (inputTableNames)
 
 def lambda_handler(event, context):
     try:
         tablename=os.getenv('DYNAMODBTABLE').strip()
         statemachinearn=os.getenv('STATEMACHINEARN').strip()
-        json_string=create_json(tablename)
+        ReplicationInstanceClass = os.getenv('ReplicationInstanceClass').strip()
+        inputTableNames=fingTableNames(tablename)
+        json_string={"ReplicationInstanceClass": ReplicationInstanceClass, "TableNames": inputTableNames}
         json_array=json.dumps(json_string)
         print("json_array:{}".format(json_array))
         response=start_cdc_execution(json_array,statemachinearn)

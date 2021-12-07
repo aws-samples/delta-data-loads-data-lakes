@@ -14,34 +14,35 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-import boto3
 
-import botocore
-import os
 import json
-def delete_task(dmstaskarn):
-  client = boto3.client('dms')
-  try:
+import boto3
+import traceback
 
-      response = client.delete_replication_task(ReplicationTaskArn=dmstaskarn)
-      print(response)
-      return "SUCCEDED"
-  except Exception as e:
-    print("Could not start dms task: %s" % e)
-    return "FAILED"
 
+def deleteReplicationInstance(replicationInstanceArn):
+    client=boto3.client('dms')
+    response = client.delete_replication_instance(
+        ReplicationInstanceArn=replicationInstanceArn
+    )
 
 def lambda_handler(event, context):
-  try:
-      print(event)
-      dmstaskarn=event['taskArn']
-      DynamoDBKey=event['DYNAMODB_KEY']
+    # TODO implement
+    createStatus=''
+    replicationInstanceArn=event['replicationInstanceArn']
 
-      delete_task_response=delete_task(dmstaskarn)
-      print(delete_task_response)
-      return {"result":delete_task_response,"taskArn":dmstaskarn,"DYNAMODB_KEY":DynamoDBKey,'replicationInstanceArn':event['replicationInstanceArn']}
-
-  except botocore.exceptions.ClientError as e:
-      print("Could not start dms task: %s" % e)
-      return {"result":"FAILED"}
+    try:
+        status=deleteReplicationInstance(replicationInstanceArn)
+        return {
+            "result":status,
+            "taskArn":event['taskArn'],"DYNAMODB_KEY":event['DYNAMODB_KEY'],
+            'replicationInstanceArn':event['replicationInstanceArn']
+        }
+    except:
+        createStatus='Failed'
+        traceback.print_exc()
+        return {
+            'statusCode': 400,
+            'replicationInstanceArn':replicationInstanceArn,
+        }
 
