@@ -19,6 +19,7 @@
       "MapTabletoStep": {
         "Type": "Map",
         "MaxConcurrency": 2,
+        "ResultPath": null,
         "ItemsPath": "$.TableNames",
         "Parameters": {
           "DYNAMODB_KEY.$": "$$.Map.Item.Value",

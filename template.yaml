@@ -635,10 +635,8 @@ Resources:
       Description: 'This functions deletes the replication instance.'
       Environment:
         Variables:
-          etlDatabaseEndpointArn:
-            Ref: !GetAtt [etlDatabaseEndpoint,Arn]
-          etlS3EndpointArn:
-            Ref: !GetAtt [etlS3Endpoint,Arn]
+          etlDatabaseEndpointArn: !Ref etlDatabaseEndpoint
+          etlS3EndpointArn: !Ref etlS3Endpoint
       MemorySize: 512
       Role: !GetAtt etlLambdaDeleteDMSReplicationInstanceManagementRole.Arn
       Runtime: python3.7
@@ -812,15 +810,15 @@ Resources:
     Properties:
       DefinitionUri: src/etlStepFunctionDataPipeline/etlStepFunctionDataPipeline.asl.json
       DefinitionSubstitutions:
-        rCreateReplicationTaskForTableArn: !GetAtt [ etlCreateReplicationTaskForTable,Arn ]
-        rLambdaStartDMSforCDCArn: !GetAtt [ etlLambdaStartReplicationTaskforCDC,Arn ]
-        rLambdaCheckCDCDMSArn: !GetAtt [ etlLambdaCheckDMSReplicationTaskStatus,Arn ]
-        rLambdaCopyCDCtoProcessedArn: !GetAtt [ etlLambdaCopyS3Copy,Arn ]
-        rLambdaDeleteDMSArn: !GetAtt [etlLambdaDeleteDMSReplicationTask,Arn ]
+        rCreateReplicationTaskForTableArn: !GetAtt etlCreateReplicationTaskForTable.Arn
+        rLambdaStartDMSforCDCArn: !GetAtt etlLambdaStartReplicationTaskforCDC.Arn
+        rLambdaCheckCDCDMSArn: !GetAtt etlLambdaCheckDMSReplicationTaskStatus.Arn
+        rLambdaCopyCDCtoProcessedArn: !GetAtt etlLambdaCopyS3Copy.Arn
+        rLambdaDeleteDMSArn: !GetAtt etlLambdaDeleteDMSReplicationTask.Arn
         rSNSDataPipelineCDCArn: !Ref etlSNSDataPipeline
-        retlLambdaUpdateLoadStartValueArn: !GetAtt [ etlLambdaUpdateLoadStartValue,Arn ]
-        retlLambdaCreateReplicationInstanceArn: !GetAtt [etlLambdaCreateReplicationInstance,Arn]
-        retlLambdaDeleteReplicationInstanceArn: !GetAtt [etlLambdaDeleteReplicationInstance,Arn]
-        retlLambdaTestReplicationInstanceConnectionArn: !GetAtt [etlLambdaTestReplicationInstanceConnection,Arn]
+        retlLambdaUpdateLoadStartValueArn: !GetAtt etlLambdaUpdateLoadStartValue.Arn
+        retlLambdaCreateReplicationInstanceArn: !GetAtt etlLambdaCreateReplicationInstance.Arn
+        retlLambdaDeleteReplicationInstanceArn: !GetAtt etlLambdaDeleteReplicationInstance.Arn
+        retlLambdaTestReplicationInstanceConnectionArn: !GetAtt etlLambdaTestReplicationInstanceConnection.Arn
       Role: !GetAtt etlstepFunctionRole.Arn
 
