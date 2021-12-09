@@ -99,17 +99,17 @@ def lambda_handler(event, context):
         query = "SELECT max("+item['filtercolumn']+") FROM "+ item['sourceSchema']+"."+item['sourceTable']
         print('Executing Query on database:',query)
         result=executeQuery(connection,query).fetchone()[0]
-        value = str(item['startvalue']).strip()
-        if "," not in value:
+        endvalue=str(item['endvalue']).strip()
+        filteroperator=str(item['endvalue']).strip()
+        if filteroperator=='gte' or filteroperator=='lte' or filteroperator=='eq' or filteroperator=='noteq':
             print("Updating start value only")
             update_attribute_value_dyndb('targetTableName',DDKey,'startvalue',str(result).strip(),DynTable)
-        else:
+        elif filteroperator=='between' or filteroperator=='notbetween':
             print("Updating start and end value")
-            value = item['startvalue'].split(',')
-            start_value=str(value[1]).strip()
+            startvalue = endvalue
             end_value=str(result).strip()
-            value= start_value + "," + end_value
-            update_attribute_value_dyndb('targetTableName',DDKey,'startvalue',value,DynTable)
+            update_attribute_value_dyndb('targetTableName',DDKey,'startvalue',startvalue,DynTable)
+            update_attribute_value_dyndb('targetTableName',DDKey,'endvalue',end_value,DynTable)
         return {'result':'SUCCEEDED','DYNAMODB_KEY':DDKey,'replicationInstanceArn':event['replicationInstanceArn']}
     except Exception as e:
         print("Exception thrown: %s" % str(e))

@@ -29,10 +29,9 @@ def read_table_configuration(tablename,key):
 tablemapping='{"rules": [{"rule-type": "selection","rule-id": "1","rule-name": "1","object-locator": {"schema-name": "SchemaName","table-name": "TableName"},"rule-action": "include","filters": [{"filter-type": "source","column-name": "FilterColumnName","filter-conditions": [{"filter-operator": "FilterColumnOperator","value": "StartValue"}]}]}]}'
 tablemappingbetween='{"rules": [{"rule-type": "selection","rule-id": "1","rule-name": "1","object-locator": {"schema-name": "SchemaName","table-name": "TableName"},"rule-action": "include","filters": [{"filter-type": "source","column-name": "FilterColumnName","filter-conditions": [{"filter-operator": "FilterColumnOperator","start-value": "StartValue","end-value": "EndValue"}]}]}]}'
 tmsimple='{"rules": [{"rule-type": "selection","rule-id": "1","rule-name": "1","object-locator": {"schema-name": "SchemaName","table-name": "TableName"},"rule-action": "include"}]}'
-def create_replication_task_for_table(tablename,DynamoDBKey,tablemapping,SourceEndpointArn,TargetEndpointArn,ReplicationInstanceArn,ReplicationTaskIdentifier):
+def create_replication_task_for_table(tablename,DynamoDBKey,tablemapping,SourceEndpointArn,TargetEndpointArn,ReplicationInstanceArn,ReplicationTaskIdentifier,replication_task_settings):
     c=boto3.client('dms')
     ReplicationTaskIdentifierName = ReplicationTaskIdentifier + "-"+DynamoDBKey
-    replication_task_settings = '{"Logging": {"EnableLogging": true,"LogComponents": [{"Id": "SOURCE_UNLOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "SOURCE_CAPTURE","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_LOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_APPLY","Severity": "LOGGER_SEVERITY_INFO"},{"Id": "TASK_MANAGER","Severity": "LOGGER_SEVERITY_DEBUG"}]},}'
     response=c.create_replication_task(
     ReplicationTaskIdentifier=ReplicationTaskIdentifierName,
     SourceEndpointArn=SourceEndpointArn,
@@ -76,6 +75,7 @@ def lambda_handler(event, context):
             tablename=i['sourceTable']
             try:
                 startvalue=i['startvalue']
+                endvalue=i['endvalue']
                 filtercolumn=i['filtercolumn']
                 filteroperator=i['filteroperator']
             except Exception as e:
@@ -83,21 +83,28 @@ def lambda_handler(event, context):
                 startvalue=''
         TaskId=schemaname+"-"+tablename.replace('_','-')+"-TaskIdentifer"
         if activeflag=='Y':
-            if filteroperator=='gte' or filteroperator=='lte' or filteroperator=='eq' :
+            if filteroperator=='gte' or filteroperator=='lte' or filteroperator=='eq' or filteroperator=='noteq' :
                 t=tablemapping
                 t=t.replace('StartValue',startvalue).replace('FilterColumnName',filtercolumn).replace('FilterColumnOperator',filteroperator).replace('SchemaName',schemaname).replace('TableName',tablename)
-            elif filteroperator=='between':
+            elif filteroperator=='between' or filteroperator=='between':
                 t=tablemappingbetween
-                sValue = startvalue.split(',')[0]
-                eValue = startvalue.split(',')[1]
+                sValue = startvalue
+                eValue = endvalue
                 t=t.replace('StartValue',sValue).replace('EndValue',eValue).replace('FilterColumnName',filtercolumn).replace('FilterColumnOperator',filteroperator).replace('SchemaName',schemaname).replace('TableName',tablename)
             else:
                 t=tmsimple
                 t=t.replace('SchemaName',schemaname).replace('TableName',tablename)
             print(t)
-            response=create_replication_task_for_table(table,DDKey,t,SArn,TArn,InstanceArn,TaskId)
+            replication_task_settings=''
+            try:
+                replication_task_settings=i['replication_task_settings']
+            except Exception as e:
+                print("assuming full load: %s" % str(e))
+                replication_task_settings = '{"Logging": {"EnableLogging": true,"LogComponents": [{"Id": "SOURCE_UNLOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "SOURCE_CAPTURE","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_LOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_APPLY","Severity": "LOGGER_SEVERITY_INFO"},{"Id": "TASK_MANAGER","Severity": "LOGGER_SEVERITY_DEBUG"}]},}'
+            response=create_replication_task_for_table(table,DDKey,t,SArn,TArn,InstanceArn,TaskId,replication_task_settings)
             taskArn = response['ReplicationTask']['ReplicationTaskArn']
             print('taskArn',taskArn)
+
             status=check_task_status(taskArn)['ReplicationTasks'][0]['Status']
             while (status.lower() in ['creating','moving','deleting', 'failed','failed-move','modifying','ready']):
                 print('Task Status:',status)
