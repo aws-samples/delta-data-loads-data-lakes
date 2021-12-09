@@ -28,21 +28,20 @@ def deleteReplicationInstance(replicationInstanceArn):
 
 def lambda_handler(event, context):
     # TODO implement
-    createStatus=''
+    createStatus='SUCCESS'
     replicationInstanceArn=event['replicationInstanceArn']
 
     try:
         status=deleteReplicationInstance(replicationInstanceArn)
         return {
-            "result":status,
-            "taskArn":event['taskArn'],"DYNAMODB_KEY":event['DYNAMODB_KEY'],
+            "createStatus":createStatus,
             'replicationInstanceArn':event['replicationInstanceArn']
         }
     except:
-        createStatus='Failed'
+        createStatus='FAILED'
         traceback.print_exc()
         return {
-            'statusCode': 400,
+            'createStatus': createStatus,
             'replicationInstanceArn':replicationInstanceArn,
         }
 

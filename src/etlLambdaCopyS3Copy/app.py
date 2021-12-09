@@ -58,8 +58,6 @@ def lambda_handler(event, context):
         print('sourcePath:'+sourcePath)
         print('targetPath:'+targetPath)
         response=client.list_objects(Bucket=bucket_to_copy,Prefix=sourcePath)
-        print(response)
-        print(response)
     except Exception as e:
         print("Exception thrown while reading parameters: %s" % str(e))
         return {'result':'FAILED'}

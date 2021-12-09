@@ -704,7 +704,7 @@ Resources:
           SubnetIds:
             - !Ref pSubnet1
             - !Ref pSubnet1
-        Timeout: 300
+        Timeout: 900
 
   etlCreateReplicationTaskForTable:
     Type: AWS::Serverless::Function
@@ -746,7 +746,7 @@ Resources:
         SubnetIds:
           - !Ref pSubnet1
           - !Ref pSubnet1
-      Timeout: 300
+      Timeout: 900
 
   etlLambdaDeleteDMSReplicationTask:
     Type: AWS::Serverless::Function
@@ -780,7 +780,7 @@ Resources:
         SubnetIds:
           - !Ref pSubnet1
           - !Ref pSubnet1
-      Timeout: 300
+      Timeout: 900
 
   etlLambdaCopyS3Copy:
       Type: AWS::Serverless::Function
@@ -797,13 +797,7 @@ Resources:
         Role: !GetAtt etlLambdaCopyS3CopyRole.Arn
         Runtime: python3.7
         Handler: app.lambda_handler
-        VpcConfig:
-          SecurityGroupIds:
-            - !Ref pReplicationIntanceSecurityGroup
-          SubnetIds:
-            - !Ref pSubnet1
-            - !Ref pSubnet1
-        Timeout: 300
+        Timeout: 900
 
   etlStepFunctionDataPipeline:
     Type: AWS::Serverless::StateMachine

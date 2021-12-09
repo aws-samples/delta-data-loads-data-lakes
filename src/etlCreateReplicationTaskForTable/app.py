@@ -98,9 +98,10 @@ def lambda_handler(event, context):
             replication_task_settings=''
             try:
                 replication_task_settings=i['replication_task_settings']
+                print(replication_task_settings)
             except Exception as e:
                 print("assuming full load: %s" % str(e))
-                replication_task_settings = '{"Logging": {"EnableLogging": true,"LogComponents": [{"Id": "SOURCE_UNLOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "SOURCE_CAPTURE","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_LOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_APPLY","Severity": "LOGGER_SEVERITY_INFO"},{"Id": "TASK_MANAGER","Severity": "LOGGER_SEVERITY_DEBUG"}]},}'
+                replication_task_settings = '{"Logging": {"EnableLogging": true,"LogComponents": [{"Id": "SOURCE_UNLOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "SOURCE_CAPTURE","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_LOAD","Severity": "LOGGER_SEVERITY_DEFAULT"},{"Id": "TARGET_APPLY","Severity": "LOGGER_SEVERITY_INFO"},{"Id": "TASK_MANAGER","Severity": "LOGGER_SEVERITY_DEBUG"}]}}'
             response=create_replication_task_for_table(table,DDKey,t,SArn,TArn,InstanceArn,TaskId,replication_task_settings)
             taskArn = response['ReplicationTask']['ReplicationTaskArn']
             print('taskArn',taskArn)

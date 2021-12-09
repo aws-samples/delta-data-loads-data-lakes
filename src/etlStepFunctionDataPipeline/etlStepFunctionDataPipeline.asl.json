@@ -5,8 +5,20 @@
       "Create Replication Instance": {
         "Type": "Task",
         "Resource": "${retlLambdaCreateReplicationInstanceArn}",
-        "Next": "Wait for Testing Replication Instance Connection"
-      },    "Wait for Testing Replication Instance Connection": {
+        "Next": "Replication Instance Creation Status?"
+      },
+      "Replication Instance Creation Status?": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Variable": "$.createStatus",
+            "StringEquals": "FAILED",
+            "Next": "Send Completion Message"
+          }
+        ],
+        "Default": "Wait for Testing Replication Instance Connection"
+      },
+      "Wait for Testing Replication Instance Connection": {
         "Type": "Wait",
         "Seconds": 60,
         "Next": "Test Replication Instance Connection"
@@ -14,7 +26,18 @@
       "Test Replication Instance Connection": {
         "Type": "Task",
         "Resource": "${retlLambdaTestReplicationInstanceConnectionArn}",
-        "Next": "MapTabletoStep"
+        "Next": "Test Replication Instance Connection status?"
+      },
+      "Test Replication Instance Connection status?": {
+        "Type": "Choice",
+        "Choices": [
+          {
+            "Variable": "$.result",
+            "StringEquals": "FAILED",
+            "Next": "Delete Replication Instance"
+          }
+        ],
+        "Default": "MapTabletoStep"
       },
       "MapTabletoStep": {
         "Type": "Map",
@@ -96,7 +119,7 @@
                       {
                         "Variable": "$.result",
                         "StringEquals": "FAILED",
-                        "Next": "Record Failure"
+                        "Next": "Delete Task on Failure"
                       },
                       {
                         "Variable": "$.result",
@@ -111,6 +134,11 @@
                     ],
        "Default": "Wait for DMS"
      },
+             "Delete Task on Failure": {
+               "Type": "Task",
+               "Resource": "${rLambdaDeleteDMSArn}",
+               "Next": "Record Failure"
+             },
       "Copy Files to destination": {
        "Type": "Task",
        "Resource": "${rLambdaCopyCDCtoProcessedArn}",
@@ -178,7 +206,7 @@
       "Resource": "arn:aws:states:::sns:publish",
        "Parameters": {
          "Message": {
-       "Input": "CDC Successful for all tables"
+           "Input": "$.createStatus"
      },
      "TopicArn": "${rSNSDataPipelineCDCArn}"
      },
